@@ -1830,7 +1830,8 @@ class Bottleneck_KAN_1D(nn.Module):
         super().__init__()
         c_ = int(c2 * e)  # hidden channels
         self.cv1 = Conv(c1, c_, k[0])
-        self.cv2 = KAN_Block(c_, c2, k[1])
+        # self.cv2 = KAN_Block(c_, c2, k[1])
+        self.cv2 = Swin_KAN_Block(c_, c2, window_size=7)
         self.add = shortcut and c1 == c2
 
     def forward(self, x):
@@ -2004,6 +2005,59 @@ class KAN_Block(nn.Module):
         x = self.act(self.bn(self.dwconv(x)))
         return x
 
+class Swin_KAN_Block(nn.Module):
+    """Swin-Style Windowed KAN Block with Pre-Flatten Spatial Encoding"""
+
+    def __init__(self, c1, c2, k=3, s=1, p=None, g=1, d=1, act=True, window_size=7):
+        super().__init__()
+        self.window_size = window_size
+        
+        # 1. Pre-Flatten Spatial Encoding (Depthwise Conv)
+        self.dwconv = nn.Conv2d(c1, c1, kernel_size=k, stride=s, padding=autopad(k, p, d), groups=c1, dilation=d)
+        
+        # 2. $1x1$ Conv to change channels from c1 to c2 (Squeeze/Expand)
+        self.channel_conv = nn.Conv2d(c1, c2, kernel_size=1)
+
+        # 3. KAN Layer (Note: KAN input now matches c2)
+        self.kanlayer = KAN([c2, c2], grid_size=4, spline_order=3, scale_noise=0.1)
+
+        # 4. Normalization and Activation
+        self.bn = nn.BatchNorm2d(c2)
+        self.act = nn.SiLU() if act is True else act if isinstance(act, nn.Module) else nn.Identity()
+
+    def forward(self, x):
+        B, C, H, W = x.shape
+        
+        # Pad the image if H or W isn't divisible by window_size
+        pad_b = (self.window_size - H % self.window_size) % self.window_size
+        pad_r = (self.window_size - W % self.window_size) % self.window_size
+        if pad_b > 0 or pad_r > 0:
+            x = F.pad(x, (0, pad_r, 0, pad_b))
+        
+        # STEP 1: Spatial Injection (Blend neighbors while it is still 2D!)
+        x = self.dwconv(x)
+        x = self.channel_conv(x) 
+        
+        _, _, H_pad, W_pad = x.shape
+
+        # STEP 2: Swin Window Partitioning
+        # Transforms to [B * num_windows, window_size^2, C]
+        x_windows = window_partition(x, self.window_size) 
+
+        # STEP 3: KAN Processing
+        # The KAN evaluates highly localized, short 1D sequences
+        x_windows = self.kanlayer(x_windows) 
+
+        # STEP 4: Reverse the Windows back to 2D
+        x = window_reverse(x_windows, self.window_size, H_pad, W_pad)
+        
+        # Remove padding if we added it
+        if pad_b > 0 or pad_r > 0:
+            x = x[:, :, :H, :W]
+
+        # STEP 5: Final Norm and Act
+        x = self.act(self.bn(x))
+        return x
 
 class KAN_Block2(nn.Module):
     """KAN Block with KANLayer, DWConv, BatchNorm, and customizable activation and convolution parameters."""
