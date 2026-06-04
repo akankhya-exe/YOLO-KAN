@@ -1831,7 +1831,7 @@ class Bottleneck_KAN_1D(nn.Module):
         c_ = int(c2 * e)  # hidden channels
         self.cv1 = Conv(c1, c_, k[0])
         # self.cv2 = KAN_Block(c_, c2, k[1])
-        self.cv2 = Swin_KAN_Block(c_, c2, window_size=5)
+        self.cv2 = Swin_KAN_Block(c_, c2, window_size=7)
         self.add = shortcut and c1 == c2
 
     def forward(self, x):
@@ -2004,7 +2004,6 @@ class KAN_Block(nn.Module):
         # Apply depthwise convolution, batch normalization, and activation
         x = self.act(self.bn(self.dwconv(x)))
         return x
-
 class Swin_KAN_Block(nn.Module):
     """Swin-Style Windowed KAN Block with Pre-Flatten Spatial Encoding"""
 
@@ -2018,8 +2017,8 @@ class Swin_KAN_Block(nn.Module):
         # 2. $1x1$ Conv to change channels from c1 to c2 (Squeeze/Expand)
         self.channel_conv = nn.Conv2d(c1, c2, kernel_size=1)
 
-        # 3. KAN Layer (Note: KAN input now matches c2)
-        self.kanlayer = KAN([c2, c2], grid_size=4, spline_order=3, scale_noise=0.1)
+        # 3. KAN Layer (DOWNGRADED TO QUADRATIC MATH: spline_order=2)
+        self.kanlayer = KAN([c2, c2], grid_size=4, spline_order=2, scale_noise=0.1)
 
         # 4. Normalization and Activation
         self.bn = nn.BatchNorm2d(c2)
