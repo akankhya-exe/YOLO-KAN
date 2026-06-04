@@ -1831,7 +1831,7 @@ class Bottleneck_KAN_1D(nn.Module):
         c_ = int(c2 * e)  # hidden channels
         self.cv1 = Conv(c1, c_, k[0])
         # self.cv2 = KAN_Block(c_, c2, k[1])
-        self.cv2 = Swin_KAN_Block(c_, c2, window_size=7)
+        self.cv2 = Swin_KAN_Block(c_, c2, window_size=5)
         self.add = shortcut and c1 == c2
 
     def forward(self, x):
